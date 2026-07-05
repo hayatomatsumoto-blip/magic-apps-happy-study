@@ -3,16 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title> </title>
+  <meta name="description" content="はっぴーAI勉強会向けマジックショー用デモアプリ。実在のサービスを装ったものではありません。">
+  <title>マジックデモ</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh; background: #111; color: #eee;
+      font-family: -apple-system, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .card {
+      max-width: 420px; width: 100%; background: #1c1c1e;
+      border-radius: 16px; padding: 28px 24px;
+    }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    p { font-size: 14px; color: #aaa; line-height: 1.6; margin-bottom: 20px; }
+    .note { font-size: 12px; color: #666; margin-bottom: 20px; }
+    a {
+      display: block; text-align: center; padding: 14px; margin-bottom: 10px;
+      background: #2c2c2e; color: #fff; text-decoration: none;
+      border-radius: 10px; font-size: 15px;
+    }
+    a:hover { background: #3a3a3c; }
+  </style>
   <script>
-    const page = new URLSearchParams(location.search).get('page') || 'glitch';
-    const routes = {
-      glitch: 'glitch.html',
-      camera: 'camera.html',
-      stopwatch: 'stopwatch.html'
-    };
-    location.replace(routes[page] || 'glitch.html');
+    const page = new URLSearchParams(location.search).get('page');
+    if (page) {
+      const routes = { glitch: 'glitch.html', camera: 'camera.html', stopwatch: 'stopwatch.html' };
+      if (routes[page]) location.replace(routes[page]);
+    }
   </script>
 </head>
-<body></body>
+<body>
+  <div class="card">
+    <h1>マジックデモアプリ</h1>
+    <p>はっぴーAI勉強会向けのマジックショー用デモです。スマホUIを模したフィクションコンテンツであり、実在のアプリ・サービスではありません。</p>
+    <p class="note">Chromeで「危険なサイト」と表示された場合は「詳細」→「アクセスする」で進められます。Safariでも利用可能です。</p>
+    <a href="stopwatch.html">ストップウォッチ</a>
+    <a href="camera.html">カメラ</a>
+    <a href="glitch.html">グリッチ</a>
+  </div>
+</body>
 </html>
