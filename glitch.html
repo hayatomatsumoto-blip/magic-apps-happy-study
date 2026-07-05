@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+  <meta name="theme-color" content="#000000">
+  <title> </title>
+  <style>
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    /* ── ARMED SCREEN ─────────────────────────── */
+    #armed-screen {
+      position: fixed; inset: 0;
+      background: #000;
+      display: flex; align-items: flex-end; justify-content: flex-end;
+      padding: 16px;
+    }
+    /* マジシャンだけが気づける極小インジケーター */
+    #dot {
+      width: 3px; height: 3px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      transition: opacity 1s;
+    }
+    #dot.pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.05; }
+      50%       { opacity: 0.25; }
+    }
+
+    /* ── CONFIG PANEL ─────────────────────────── */
+    #config-panel {
+      position: fixed; inset: 0;
+      background: #0a0a0a;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: flex-start;
+      padding: 56px 28px 32px;
+      gap: 20px;
+      overflow-y: auto;
+      z-index: 900;
+    }
+    #config-panel.open { display: flex; }
+
+    .cfg-title {
+      color: #ccc;
+      font-family: -apple-system, sans-serif;
+      font-size: 13px; letter-spacing: 3px;
+      text-transform: uppercase;
+      align-self: flex-start;
+      margin-bottom: 4px;
+    }
+    .cfg-group { width: 100%; }
+    .cfg-label {
+      color: #555;
+      font-family: -apple-system, sans-serif;
+      font-size: 11px; letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .cfg-input {
+      width: 100%;
+      background: #1c1c1e; border: 1px solid #2c2c2e; border-radius: 10px;
+      color: #fff;
+      font-family: -apple-system, sans-serif;
+      font-size: 17px; padding: 14px 16px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    .cfg-input:focus { border-color: #555; }
+
+    .upload-zone {
+      width: 100%;
+      background: #1c1c1e; border: 1.5px dashed #333; border-radius: 10px;
+      padding: 20px 16px; text-align: center;
+      color: #555;
+      font-family: -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      position: relative; cursor: pointer;
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    #upload-status { color: #30d158; font-size: 13px; margin-top: 4px; display: none; }
+    #preview-img {
+      max-width: 100%; max-height: 100px; border-radius: 8px;
+      margin-top: 10px; display: none;
+      object-fit: contain;
+    }
+
+    .cfg-btn {
+      width: 100%; padding: 16px;
+      border: none; border-radius: 12px;
+      font-family: -apple-system, sans-serif;
+      font-size: 17px; font-weight: 600; letter-spacing: 0.3px;
+      cursor: pointer;
+    }
+    #arm-btn   { background: #ff3b30; color: #fff; margin-top: 8px; }
+    #close-btn { background: #1c1c1e; color: #636366; font-size: 15px; padding: 12px; }
+
+    #remaining-display {
+      color: #ff3b30;
+      font-family: -apple-system, sans-serif;
+      font-size: 52px; font-weight: 200;
+      letter-spacing: 4px;
+      font-variant-numeric: tabular-nums;
+      display: none;
+    }
+
+    /* ── GLITCH CANVAS ────────────────────────── */
+    #glitch-canvas {
+      position: fixed; inset: 0;
+      display: none; z-index: 800;
+      image-rendering: pixelated;
+    }
+
+    /* ── REVEAL SCREEN ────────────────────────── */
+    #reveal-screen {
+      position: fixed; inset: 0;
+      background: #000;
+      display: none; align-items: center; justify-content: center;
+      z-index: 850;
+    }
+    #reveal-img {
+      max-width: 100%; max-height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 観客に見せる画面 -->
+  <div id="armed-screen">
+    <div id="dot"></div>
+  </div>
+
+  <!-- 設定パネル（マジシャン専用） -->
+  <div id="config-panel">
+    <div class="cfg-title">GLITCH SETUP</div>
+
+    <div class="cfg-group">
+      <label class="cfg-label" for="timer-val">タイマー（秒）</label>
+      <input type="number" class="cfg-input" id="timer-val" value="45" min="5" max="300">
+    </div>
+
+    <div class="cfg-group">
+      <label class="cfg-label">予言画像</label>
+      <div class="upload-zone" id="upload-zone">
+        <div id="upload-hint">タップして予言画像を選択</div>
+        <div id="upload-status">✓ 画像設定済み</div>
+        <img id="preview-img" alt="preview">
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+    </div>
+
+    <div id="remaining-display">--</div>
+
+    <button class="cfg-btn" id="arm-btn">タイマー起動</button>
+    <button class="cfg-btn" id="close-btn">閉じる</button>
+  </div>
+
+  <!-- グリッチ描画レイヤー -->
+  <canvas id="glitch-canvas"></canvas>
+
+  <!-- 予言リビール -->
+  <div id="reveal-screen">
+    <img id="reveal-img" alt="">
+  </div>
+
+<script>
+// ── STATE ───────────────────────────────────────────────
+// idle → config → armed → glitch → reveal
+let state = 'idle';
+let timerSec = 45;
+let remaining = 0;
+let predSrc = '';        // base64 prediction image
+let predImage = null;    // Image object for canvas
+let countdownId = null;
+let wakeLock = null;
+let longPressId = null;
+let glitchRafId = null;
+let audioCtx = null;
+
+// ── ELEMENTS ────────────────────────────────────────────
+const armedScreen    = document.getElementById('armed-screen');
+const dot            = document.getElementById('dot');
+const configPanel    = document.getElementById('config-panel');
+const timerInput     = document.getElementById('timer-val');
+const fileInput      = document.getElementById('file-input');
+const uploadHint     = document.getElementById('upload-hint');
+const uploadStatus   = document.getElementById('upload-status');
+const previewImg     = document.getElementById('preview-img');
+const armBtn         = document.getElementById('arm-btn');
+const closeBtn       = document.getElementById('close-btn');
+const remainingDisp  = document.getElementById('remaining-display');
+const glitchCanvas   = document.getElementById('glitch-canvas');
+const revealScreen   = document.getElementById('reveal-screen');
+const revealImg      = document.getElementById('reveal-img');
+
+// ── SESSION RESTORE ─────────────────────────────────────
+(function restoreSession() {
+  const saved = sessionStorage.getItem('pred');
+  if (!saved) return;
+  predSrc = saved;
+  loadPredImage(predSrc);
+  uploadStatus.style.display = 'block';
+  uploadHint.style.display   = 'none';
+  previewImg.src = predSrc;
+  previewImg.style.display = 'block';
+})();
+
+// ── SECRET TRIGGER ───────────────────────────────────────
+// 右下隅(80px × 80px)を3秒長押し → 設定パネル
+const CORNER = 80;
+const HOLD_MS = 3000;
+
+function handlePressStart(x, y) {
+  if (state !== 'idle' && state !== 'armed') return;
+  const inCorner =
+    x > window.innerWidth  - CORNER &&
+    y > window.innerHeight - CORNER;
+  if (!inCorner) return;
+  longPressId = setTimeout(openConfig, HOLD_MS);
+}
+
+// タッチ/マウス対応（スマホの互換mouseイベント二重発火を防ぐ）
+let suppressMouseUntil = 0;
+document.addEventListener('touchstart', (e) => {
+  suppressMouseUntil = Date.now() + 600;
+  const t = e.touches[0];
+  handlePressStart(t.clientX, t.clientY);
+}, { passive: true });
+document.addEventListener('mousedown', (e) => {
+  if (Date.now() < suppressMouseUntil) return;
+  handlePressStart(e.clientX, e.clientY);
+});
+['touchend', 'touchmove', 'touchcancel', 'mouseup', 'mousemove'].forEach(ev => {
+  document.addEventListener(ev, () => clearTimeout(longPressId), { passive: true });
+});
+
+// ── CONFIG PANEL ─────────────────────────────────────────
+function openConfig() {
+  if (state === 'armed') disarm();
+  state = 'config';
+  remainingDisp.style.display = 'none';
+  armBtn.textContent = 'タイマー起動';
+  configPanel.classList.add('open');
+}
+
+closeBtn.addEventListener('click', () => {
+  configPanel.classList.remove('open');
+  state = 'idle';
+});
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    predSrc = e.target.result;
+    sessionStorage.setItem('pred', predSrc);
+    loadPredImage(predSrc);
+    uploadStatus.style.display = 'block';
+    uploadHint.style.display   = 'none';
+    previewImg.src = predSrc;
+    previewImg.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+function loadPredImage(src) {
+  predImage = new Image();
+  predImage.src = src;
+}
+
+async function primeAudio() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
+    }
+  } catch (e) {}
+}
+
+armBtn.addEventListener('click', async () => {
+  if (!predSrc) {
+    alert('予言画像を設定してください');
+    return;
+  }
+  await primeAudio();
+  timerSec = Math.max(5, parseInt(timerInput.value) || 45);
+  configPanel.classList.remove('open');
+  startArmed();
+});
+
+// ── ARMED ────────────────────────────────────────────────
+async function startArmed() {
+  state = 'armed';
+  remaining = timerSec;
+  dot.classList.add('pulse');
+
+  // Wake Lock（画面オン維持）
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch(e) {
+    // iOS など非対応の場合は無視
+  }
+
+  countdownId = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(countdownId);
+      startGlitch();
+    }
+  }, 1000);
+}
+
+function disarm() {
+  clearInterval(countdownId);
+  dot.classList.remove('pulse');
+  releaseWakeLock();
+}
+
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+// ── GLITCH ───────────────────────────────────────────────
+const GLITCH_DURATION = 4200; // ms
+
+function startGlitch() {
+  state = 'glitch';
+  dot.classList.remove('pulse');
+  releaseWakeLock();
+
+  glitchCanvas.width  = window.innerWidth;
+  glitchCanvas.height = window.innerHeight;
+  glitchCanvas.style.display = 'block';
+
+  startAudio();
+
+  const ctx = glitchCanvas.getContext('2d');
+  const startT = performance.now();
+
+  function frame(now) {
+    const elapsed  = now - startT;
+    const progress = Math.min(elapsed / GLITCH_DURATION, 1);
+    drawGlitch(ctx, progress);
+
+    if (progress < 1) {
+      glitchRafId = requestAnimationFrame(frame);
+    } else {
+      finishGlitch();
+    }
+  }
+  glitchRafId = requestAnimationFrame(frame);
+}
+
+function drawGlitch(ctx, p) {
+  const w = glitchCanvas.width;
+  const h = glitchCanvas.height;
+
+  // ベースをリセット
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+
+  if (p < 0.12) {
+    // Phase 1: 最初の軽い点滅
+    const t = p / 0.12;
+    drawNoise(ctx, w, h, t * 0.4, 0.6);
+
+  } else if (p < 0.78) {
+    // Phase 2: 重い崩壊
+    const t = (p - 0.12) / 0.66;
+    drawNoise(ctx, w, h, 0.8, 1.0);
+    drawScanLines(ctx, w, h, t);
+    drawColorBlocks(ctx, w, h, t);
+    drawRGBSplit(ctx, w, h, t);
+
+  } else {
+    // Phase 3: 予言画像がグリッチから浮かび上がる
+    const t = (p - 0.78) / 0.22;
+    const noiseAlpha = 1 - t * 0.9;
+    drawNoise(ctx, w, h, noiseAlpha * 0.6, noiseAlpha);
+    drawScanLines(ctx, w, h, 1 - t);
+
+    if (predImage && predImage.complete) {
+      ctx.globalAlpha = Math.pow(t, 0.6);
+      ctx.drawImage(predImage, 0, 0, w, h);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawNoise(ctx, w, h, density, maxAlpha) {
+  const count = Math.floor(density * 80);
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * w;
+    const y = Math.random() * h;
+    const sw = rand(4, 120);
+    const sh = rand(1, 8);
+    const r = randInt(0, 255);
+    const g = randInt(0, 255);
+    const b = randInt(0, 255);
+    ctx.globalAlpha = Math.random() * (maxAlpha || 0.8);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(x, y, sw, sh);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawScanLines(ctx, w, h, intensity) {
+  const lineH = 2;
+  const gap   = Math.floor(4 + (1 - intensity) * 12);
+  ctx.globalAlpha = intensity * 0.5;
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < h; y += gap + lineH) {
+    ctx.fillRect(0, y, w, lineH);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawColorBlocks(ctx, w, h, t) {
+  const count = Math.floor(t * 18);
+  for (let i = 0; i < count; i++) {
+    const x  = Math.random() * w;
+    const y  = Math.random() * h;
+    const bw = rand(20, 200);
+    const bh = rand(4, 40);
+    // RGB 分離ブロック
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = `rgba(255,0,0,0.5)`;
+    ctx.fillRect(x - 4, y, bw, bh);
+    ctx.fillStyle = `rgba(0,255,255,0.5)`;
+    ctx.fillRect(x + 4, y, bw, bh);
+    ctx.fillStyle = `rgba(${randInt(100,255)},${randInt(100,255)},${randInt(100,255)},0.8)`;
+    ctx.fillRect(x, y, bw, bh);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRGBSplit(ctx, w, h, t) {
+  if (!predImage || !predImage.complete) return;
+  const shift = t * 20;
+  ctx.globalCompositeOperation = 'screen';
+
+  ctx.globalAlpha = 0.15 * t;
+  ctx.drawImage(predImage, -shift, 0, w, h);
+
+  ctx.globalAlpha = 0.10 * t;
+  ctx.drawImage(predImage,  shift, 0, w, h);
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function finishGlitch() {
+  stopAudio();
+  glitchCanvas.style.display = 'none';
+  cancelAnimationFrame(glitchRafId);
+  showReveal();
+}
+
+// ── REVEAL ───────────────────────────────────────────────
+function showReveal() {
+  state = 'reveal';
+  revealImg.src = predSrc;
+  revealScreen.style.display = 'flex';
+
+  // タップでリセット（次のショーへ）
+  revealScreen.addEventListener('click', resetToIdle, { once: true });
+}
+
+function resetToIdle() {
+  revealScreen.style.display = 'none';
+  state = 'idle';
+}
+
+// ── AUDIO ────────────────────────────────────────────────
+function startAudio() {
+  if (!audioCtx) return;
+  try {
+    const sr = audioCtx.sampleRate;
+
+    // ホワイトノイズ
+    const bufLen = sr * 5;
+    const buf    = audioCtx.createBuffer(1, bufLen, sr);
+    const data   = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+
+    // ディストーション
+    const dist = audioCtx.createWaveShaper();
+    dist.curve = makeDistortionCurve(600);
+
+    // ゲイン（徐々にフェードアウト）
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + GLITCH_DURATION / 1000);
+
+    // 高周波オシレーター（不快感を強調）
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 1.5);
+    osc.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 3);
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + GLITCH_DURATION / 1000);
+
+    noise.connect(dist);
+    dist.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.connect(oscGain);
+    oscGain.connect(audioCtx.destination);
+
+    noise.start();
+    osc.start();
+    osc.stop(audioCtx.currentTime + GLITCH_DURATION / 1000);
+  } catch(e) {
+    // 音声非対応環境は無視
+  }
+}
+
+function stopAudio() {
+  try { if (audioCtx) audioCtx.close(); } catch(e) {}
+  audioCtx = null;
+}
+
+function makeDistortionCurve(k) {
+  const n = 256;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
+}
+
+// ── UTILS ─────────────────────────────────────────────────
+function rand(min, max)    { return Math.random() * (max - min) + min; }
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+// ── RESIZE ───────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  glitchCanvas.width  = window.innerWidth;
+  glitchCanvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>

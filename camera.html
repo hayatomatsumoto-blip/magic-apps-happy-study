@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#000000">
+  <title> </title>
+  <style>
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+
+    /* ── CAMERA VIEW ───────────────────────────── */
+    #camera-view {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      background: #000;
+    }
+
+    #top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px;
+      background: #000; flex-shrink: 0;
+    }
+    .top-icon {
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    #video-container {
+      flex: 1; position: relative; overflow: hidden; background: #111;
+    }
+    #video {
+      width: 100%; height: 100%; object-fit: cover;
+      transform: scaleX(1); /* 前面カメラ時は -1 */
+    }
+
+    #zoom-label {
+      position: absolute; left: 20px; bottom: 56px;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 20px;
+      color: #fff; font-family: -apple-system, sans-serif;
+      font-size: 14px; padding: 5px 14px;
+    }
+
+    #mode-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      display: flex; justify-content: center; gap: 24px;
+      padding: 8px 0;
+      background: linear-gradient(transparent, rgba(0,0,0,0.35));
+    }
+    .mode-item {
+      color: rgba(255,255,255,0.45);
+      font-family: -apple-system, sans-serif;
+      font-size: 13px; letter-spacing: 1.2px; font-weight: 500;
+      text-transform: uppercase;
+    }
+    .mode-item.active { color: #ffd60a; }
+
+    #bottom-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 36px 44px;
+      background: #000; flex-shrink: 0;
+    }
+
+    #thumb-btn {
+      width: 56px; height: 56px; border-radius: 10px;
+      overflow: hidden;
+      border: 2px solid rgba(255,255,255,0.4);
+      background: #1a1a1a;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    #thumb-img { width: 100%; height: 100%; object-fit: cover; display: none; }
+
+    #shutter-btn {
+      width: 74px; height: 74px; border-radius: 50%;
+      border: 4px solid #fff; padding: 4px;
+      background: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    #shutter-inner {
+      width: 100%; height: 100%; border-radius: 50%;
+      background: #fff; transition: transform 0.08s;
+    }
+    #shutter-btn:active #shutter-inner { transform: scale(0.88); }
+
+    #flip-btn {
+      width: 56px; height: 56px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+
+    /* ── CONFIG PANEL ─────────────────────────── */
+    #config-panel {
+      position: fixed; inset: 0; background: #0a0a0a;
+      display: none; flex-direction: column;
+      align-items: center; padding: 56px 28px 36px;
+      gap: 20px; overflow-y: auto; z-index: 900;
+    }
+    #config-panel.open { display: flex; }
+
+    .cfg-title {
+      color: #ccc; font-family: -apple-system, sans-serif;
+      font-size: 13px; letter-spacing: 3px;
+      text-transform: uppercase; align-self: flex-start;
+    }
+    .cfg-group { width: 100%; }
+    .cfg-label {
+      color: #555; font-family: -apple-system, sans-serif;
+      font-size: 11px; letter-spacing: 1.5px;
+      text-transform: uppercase; margin-bottom: 8px; display: block;
+    }
+
+    .upload-zone {
+      width: 100%; background: #1c1c1e;
+      border: 1.5px dashed #333; border-radius: 10px;
+      padding: 20px 16px; text-align: center;
+      color: #555; font-family: -apple-system, sans-serif;
+      font-size: 14px; position: relative; cursor: pointer;
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    #upload-status { color: #30d158; font-size: 13px; margin-top: 4px; display: none; }
+
+    /* 合成位置プレビュー */
+    #pos-preview {
+      width: 100%; aspect-ratio: 16/9;
+      background: #1c1c1e; border-radius: 10px;
+      position: relative; overflow: hidden;
+      border: 1px solid #2c2c2e;
+    }
+    #pos-preview-label {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #333; font-family: -apple-system, sans-serif; font-size: 12px;
+      pointer-events: none;
+    }
+    #pred-drag {
+      position: absolute;
+      cursor: grab; display: none;
+      touch-action: none;
+    }
+    #pred-drag:active { cursor: grabbing; }
+    #pred-drag img { width: 100%; pointer-events: none; display: block; }
+
+    .cfg-slider {
+      width: 100%; accent-color: #0a84ff;
+      -webkit-appearance: none; appearance: none;
+      background: #2c2c2e; border-radius: 4px;
+      height: 4px; outline: none;
+    }
+
+    .cfg-btn {
+      width: 100%; padding: 16px; border: none; border-radius: 12px;
+      font-family: -apple-system, sans-serif;
+      font-size: 17px; font-weight: 600; cursor: pointer;
+    }
+    #done-btn    { background: #0a84ff; color: #fff; margin-top: 8px; }
+    #cancel-btn  { background: #1c1c1e; color: #636366; font-size: 15px; padding: 12px; }
+
+    /* ── GALLERY VIEW ─────────────────────────── */
+    #gallery-view {
+      position: fixed; inset: 0; background: #000;
+      display: none; flex-direction: column; z-index: 800;
+    }
+    #gallery-view.open { display: flex; }
+
+    #gallery-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; background: #000; flex-shrink: 0;
+    }
+    .g-icon {
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    #gallery-title {
+      color: #fff; font-family: -apple-system, sans-serif;
+      font-size: 15px; font-weight: 500;
+    }
+    #gallery-img-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #gallery-photo { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    #gallery-bottom {
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 16px 32px 44px; background: #000; flex-shrink: 0;
+    }
+    .g-action {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      color: #fff; font-family: -apple-system, sans-serif; font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- CAMERA VIEW -->
+  <div id="camera-view">
+    <div id="top-bar">
+      <!-- フラッシュ -->
+      <div class="top-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="white"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+      </div>
+      <!-- その他アイコン -->
+      <div style="display:flex;gap:18px;">
+        <div class="top-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="white" opacity=".6">
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+          </svg>
+        </div>
+        <div class="top-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="white" opacity=".6">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div id="video-container">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="zoom-label">1×</div>
+      <div id="mode-bar">
+        <span class="mode-item">VIDEO</span>
+        <span class="mode-item active">PHOTO</span>
+        <span class="mode-item">PORTRAIT</span>
+      </div>
+    </div>
+
+    <div id="bottom-bar">
+      <div id="thumb-btn">
+        <img id="thumb-img" alt="">
+      </div>
+      <button id="shutter-btn"><div id="shutter-inner"></div></button>
+      <div id="flip-btn">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="white">
+          <path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-5 11.5V14H9v2.5L5.5 13 9 9.5V12h6V9.5l3.5 3.5-3.5 3.5z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIG PANEL（マジシャン専用） -->
+  <div id="config-panel">
+    <div class="cfg-title">CAMERA SETUP</div>
+
+    <div class="cfg-group">
+      <label class="cfg-label">予言画像</label>
+      <div class="upload-zone">
+        <div id="upload-hint">タップして予言画像を選択</div>
+        <div id="upload-status">✓ 画像設定済み</div>
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+    </div>
+
+    <div class="cfg-group" id="pos-group" style="display:none">
+      <label class="cfg-label">合成位置（ドラッグで調整）</label>
+      <div id="pos-preview">
+        <div id="pos-preview-label">撮影エリアのイメージ</div>
+        <div id="pred-drag"><img id="pred-drag-img" alt=""></div>
+      </div>
+    </div>
+
+    <div class="cfg-group" id="scale-group" style="display:none">
+      <label class="cfg-label">サイズ（<span id="scale-val">30</span>%）</label>
+      <input type="range" class="cfg-slider" id="scale-slider" min="5" max="80" value="30">
+    </div>
+
+    <button class="cfg-btn" id="done-btn">完了</button>
+    <button class="cfg-btn" id="cancel-btn">キャンセル</button>
+  </div>
+
+  <!-- GALLERY VIEW -->
+  <div id="gallery-view">
+    <div id="gallery-top">
+      <div class="g-icon" id="gallery-back">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+          <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+        </svg>
+      </div>
+      <div id="gallery-title">最近の項目</div>
+      <div class="g-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="white" opacity=".6">
+          <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+        </svg>
+      </div>
+    </div>
+    <div id="gallery-img-wrap">
+      <img id="gallery-photo" alt="">
+    </div>
+    <div id="gallery-bottom">
+      <div class="g-action">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+          <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
+        </svg>
+        <span>共有</span>
+      </div>
+      <div class="g-action">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+        </svg>
+        <span>お気に入り</span>
+      </div>
+      <div class="g-action">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+        </svg>
+        <span>削除</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── STATE ────────────────────────────────────────────────
+let stream = null;
+let facingMode = 'environment';
+let predSrc = '';
+let predImage = null;
+let predXpct = 50;
+let predYpct = 30;
+let predScalePct = 30;
+let capturedSrc = '';
+let longPressId = null;
+let dragging = false;
+let dragOffX = 0, dragOffY = 0;
+
+// ── ELEMENTS ─────────────────────────────────────────────
+const video        = document.getElementById('video');
+const thumbBtn     = document.getElementById('thumb-btn');
+const thumbImg     = document.getElementById('thumb-img');
+const shutterBtn   = document.getElementById('shutter-btn');
+const flipBtn      = document.getElementById('flip-btn');
+const configPanel  = document.getElementById('config-panel');
+const fileInput    = document.getElementById('file-input');
+const uploadHint   = document.getElementById('upload-hint');
+const uploadStatus = document.getElementById('upload-status');
+const posGroup     = document.getElementById('pos-group');
+const scaleGroup   = document.getElementById('scale-group');
+const posPreview   = document.getElementById('pos-preview');
+const predDrag     = document.getElementById('pred-drag');
+const predDragImg  = document.getElementById('pred-drag-img');
+const scaleSlider  = document.getElementById('scale-slider');
+const scaleValEl   = document.getElementById('scale-val');
+const doneBtn      = document.getElementById('done-btn');
+const cancelBtn    = document.getElementById('cancel-btn');
+const galleryView  = document.getElementById('gallery-view');
+const galleryBack  = document.getElementById('gallery-back');
+const galleryPhoto = document.getElementById('gallery-photo');
+
+// ── SESSION RESTORE ──────────────────────────────────────
+(function restore() {
+  const p = sessionStorage.getItem('cam_pred');
+  if (p) {
+    predSrc = p;
+    loadPredImage(p);
+    uploadStatus.style.display = 'block';
+    uploadHint.style.display   = 'none';
+  }
+  predXpct     = parseFloat(sessionStorage.getItem('cam_x')     || 50);
+  predYpct     = parseFloat(sessionStorage.getItem('cam_y')     || 30);
+  predScalePct = parseFloat(sessionStorage.getItem('cam_scale') || 30);
+  scaleSlider.value    = predScalePct;
+  scaleValEl.textContent = Math.round(predScalePct);
+})();
+
+// ── CAMERA ───────────────────────────────────────────────
+async function startCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+  } catch(e) {
+    console.error('Camera error:', e);
+  }
+}
+startCamera();
+
+flipBtn.addEventListener('click', () => {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  startCamera();
+});
+
+// ── SECRET TRIGGER（右下3秒長押し） ──────────────────────
+const CORNER = 80, HOLD_MS = 3000;
+let suppressMouseUntil = 0;
+
+function tryLongPress(x, y) {
+  const ok = x > window.innerWidth - CORNER && y > window.innerHeight - CORNER;
+  if (!ok) return;
+  longPressId = setTimeout(openConfig, HOLD_MS);
+}
+
+document.addEventListener('touchstart', e => {
+  suppressMouseUntil = Date.now() + 600;
+  const t = e.touches[0];
+  tryLongPress(t.clientX, t.clientY);
+}, { passive: true });
+document.addEventListener('mousedown', e => {
+  if (Date.now() < suppressMouseUntil) return;
+  tryLongPress(e.clientX, e.clientY);
+});
+['touchend','touchmove','touchcancel','mouseup','mousemove'].forEach(ev =>
+  document.addEventListener(ev, () => clearTimeout(longPressId), { passive: true })
+);
+
+// ── SHUTTER ──────────────────────────────────────────────
+shutterBtn.addEventListener('click', () => {
+  const canvas = document.createElement('canvas');
+  const vw = video.videoWidth  || 1280;
+  const vh = video.videoHeight || 720;
+  canvas.width = vw; canvas.height = vh;
+  const ctx = canvas.getContext('2d');
+
+  if (facingMode === 'user') {
+    ctx.translate(vw, 0); ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, vw, vh);
+  if (facingMode === 'user') { ctx.setTransform(1,0,0,1,0,0); }
+
+  if (predImage && predImage.complete && predImage.naturalWidth) {
+    const pw = vw * (predScalePct / 100);
+    const ph = pw * (predImage.naturalHeight / predImage.naturalWidth);
+    const px = vw * (predXpct / 100) - pw / 2;
+    const py = vh * (predYpct / 100) - ph / 2;
+    ctx.drawImage(predImage, px, py, pw, ph);
+  }
+
+  capturedSrc = canvas.toDataURL('image/jpeg', 0.92);
+  thumbImg.src = capturedSrc;
+  thumbImg.style.display = 'block';
+
+  // 撮影フラッシュ演出
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:999;pointer-events:none;opacity:1;transition:opacity 0.3s';
+  document.body.appendChild(flash);
+  requestAnimationFrame(() => { flash.style.opacity = '0'; });
+  setTimeout(() => flash.remove(), 400);
+});
+
+// ── THUMBNAIL → GALLERY ──────────────────────────────────
+thumbBtn.addEventListener('click', () => {
+  if (!capturedSrc) return;
+  galleryPhoto.src = capturedSrc;
+  galleryView.classList.add('open');
+});
+galleryBack.addEventListener('click', () => galleryView.classList.remove('open'));
+
+// ── CONFIG PANEL ─────────────────────────────────────────
+function openConfig() {
+  configPanel.classList.add('open');
+  if (predSrc) {
+    posGroup.style.display   = 'block';
+    scaleGroup.style.display = 'block';
+    updateDraggable();
+  }
+}
+
+cancelBtn.addEventListener('click', () => configPanel.classList.remove('open'));
+doneBtn.addEventListener('click', () => {
+  sessionStorage.setItem('cam_x',     predXpct);
+  sessionStorage.setItem('cam_y',     predYpct);
+  sessionStorage.setItem('cam_scale', predScalePct);
+  configPanel.classList.remove('open');
+});
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    predSrc = e.target.result;
+    sessionStorage.setItem('cam_pred', predSrc);
+    loadPredImage(predSrc);
+    uploadStatus.style.display = 'block';
+    uploadHint.style.display   = 'none';
+    posGroup.style.display   = 'block';
+    scaleGroup.style.display = 'block';
+    updateDraggable();
+  };
+  reader.readAsDataURL(file);
+});
+
+function loadPredImage(src) {
+  predImage = new Image();
+  predImage.src = src;
+  predDragImg.src = src;
+}
+
+scaleSlider.addEventListener('input', () => {
+  predScalePct = parseInt(scaleSlider.value);
+  scaleValEl.textContent = predScalePct;
+  updateDraggable();
+});
+
+function updateDraggable() {
+  if (!predSrc) return;
+  predDrag.style.display = 'block';
+  predDrag.style.width   = predScalePct + '%';
+  // 中心座標からleft/topを算出
+  const pw = posPreview.offsetWidth * predScalePct / 100;
+  const ph = predImage && predImage.naturalWidth
+    ? pw * predImage.naturalHeight / predImage.naturalWidth
+    : pw * 0.7;
+  const left = posPreview.offsetWidth  * predXpct / 100 - pw / 2;
+  const top  = posPreview.offsetHeight * predYpct / 100 - ph / 2;
+  predDrag.style.left = clamp(left, 0, posPreview.offsetWidth  - pw) + 'px';
+  predDrag.style.top  = clamp(top,  0, posPreview.offsetHeight - ph) + 'px';
+}
+
+// ドラッグ
+predDrag.addEventListener('touchstart', e => {
+  dragging = true;
+  const t = e.touches[0];
+  const r = predDrag.getBoundingClientRect();
+  dragOffX = t.clientX - r.left;
+  dragOffY = t.clientY - r.top;
+  e.stopPropagation();
+}, { passive: true });
+
+predDrag.addEventListener('mousedown', e => {
+  dragging = true;
+  const r = predDrag.getBoundingClientRect();
+  dragOffX = e.clientX - r.left;
+  dragOffY = e.clientY - r.top;
+  e.stopPropagation();
+});
+
+document.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  movePred(e.touches[0].clientX - dragOffX, e.touches[0].clientY - dragOffY);
+}, { passive: true });
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  movePred(e.clientX - dragOffX, e.clientY - dragOffY);
+});
+
+['touchend','mouseup'].forEach(ev =>
+  document.addEventListener(ev, () => { dragging = false; }, { passive: true })
+);
+
+function movePred(absX, absY) {
+  const pr = posPreview.getBoundingClientRect();
+  const pw = predDrag.offsetWidth;
+  const ph = predDrag.offsetHeight;
+  const relX = clamp(absX - pr.left, 0, pr.width  - pw);
+  const relY = clamp(absY - pr.top,  0, pr.height - ph);
+  predDrag.style.left = relX + 'px';
+  predDrag.style.top  = relY + 'px';
+  predXpct = ((relX + pw / 2) / pr.width)  * 100;
+  predYpct = ((relY + ph / 2) / pr.height) * 100;
+}
+
+function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+</script>
+</body>
+</html>
