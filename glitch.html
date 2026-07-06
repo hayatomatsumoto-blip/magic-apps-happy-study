@@ -139,6 +139,12 @@
       max-width: 100%; max-height: 100%;
       object-fit: contain;
     }
+
+    #secret-corner {
+      position: fixed; right: 0; bottom: 0;
+      width: 88px; height: 88px;
+      z-index: 700; touch-action: none;
+    }
   </style>
 </head>
 <body>
@@ -181,6 +187,8 @@
     <img id="reveal-img" alt="">
   </div>
 
+  <div id="secret-corner" aria-hidden="true"></div>
+
 <script>
 // ── STATE ───────────────────────────────────────────────
 // idle → config → armed → glitch → reveal
@@ -191,7 +199,6 @@ let predSrc = '';        // base64 prediction image
 let predImage = null;    // Image object for canvas
 let countdownId = null;
 let wakeLock = null;
-let longPressId = null;
 let glitchRafId = null;
 let audioCtx = null;
 
@@ -223,34 +230,44 @@ const revealImg      = document.getElementById('reveal-img');
   previewImg.style.display = 'block';
 })();
 
-// ── SECRET TRIGGER ───────────────────────────────────────
-// 右下隅(80px × 80px)を3秒長押し → 設定パネル
-const CORNER = 80;
-const HOLD_MS = 3000;
+// ── SECRET TRIGGER（右下3秒長押し） ──────────────────────
+function bindLongPress(el, onHold, holdMs) {
+  let timer = null;
+  let sx = 0, sy = 0;
+  const TOL = 24;
 
-function handlePressStart(x, y) {
-  if (state !== 'idle' && state !== 'armed') return;
-  const inCorner =
-    x > window.innerWidth  - CORNER &&
-    y > window.innerHeight - CORNER;
-  if (!inCorner) return;
-  longPressId = setTimeout(openConfig, HOLD_MS);
+  function clearTimer() {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+
+  function start(x, y) {
+    clearTimer();
+    sx = x; sy = y;
+    timer = setTimeout(() => { clearTimer(); onHold(); }, holdMs);
+  }
+
+  el.addEventListener('touchstart', e => {
+    e.preventDefault();
+    start(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+
+  el.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - sx, t.clientY - sy) > TOL) clearTimer();
+  }, { passive: true });
+
+  el.addEventListener('touchend', clearTimer, { passive: true });
+  el.addEventListener('touchcancel', clearTimer, { passive: true });
+  el.addEventListener('mousedown', e => start(e.clientX, e.clientY));
+  el.addEventListener('mouseup', clearTimer);
+  el.addEventListener('mouseleave', clearTimer);
 }
 
-// タッチ/マウス対応（スマホの互換mouseイベント二重発火を防ぐ）
-let suppressMouseUntil = 0;
-document.addEventListener('touchstart', (e) => {
-  suppressMouseUntil = Date.now() + 600;
-  const t = e.touches[0];
-  handlePressStart(t.clientX, t.clientY);
-}, { passive: true });
-document.addEventListener('mousedown', (e) => {
-  if (Date.now() < suppressMouseUntil) return;
-  handlePressStart(e.clientX, e.clientY);
-});
-['touchend', 'touchmove', 'touchcancel', 'mouseup', 'mousemove'].forEach(ev => {
-  document.addEventListener(ev, () => clearTimeout(longPressId), { passive: true });
-});
+bindLongPress(document.getElementById('secret-corner'), () => {
+  if (state !== 'idle' && state !== 'armed') return;
+  openConfig();
+}, 3000);
 
 // ── CONFIG PANEL ─────────────────────────────────────────
 function openConfig() {

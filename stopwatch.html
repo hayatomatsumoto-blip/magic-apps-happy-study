@@ -86,12 +86,12 @@
       position: relative;
     }
 
-    /* 秘密トリガーゾーン（3番目と4番目のアイコンの隙間） */
+    /* 秘密トリガーゾーン（ドック3・4番目アイコンの隙間） */
     #trigger-zone {
-      position: absolute; top: 0; height: 100%; width: 24px;
-      /* 右から数えて2番目のアイコンの右側に配置 */
-      right: calc(25% + 8px);
+      position: absolute; top: 0; height: 100%; width: 56px;
+      right: calc(25% - 6px);
       background: transparent; z-index: 20;
+      touch-action: manipulation;
     }
 
     /* ── CLOCK APP ───────────────────────────── */
@@ -453,8 +453,9 @@ function addTapListener(el, handler, preventGhostClick) {
   });
 }
 
-// ── SECRET TRIGGER (ドック隙間トリプルタップ) ─────────────
-function handleTap() {
+// ── SECRET TRIGGER (トリプルタップ) ───────────────────────
+// ①ホーム画面ドックの隙間  ②時計アプリ内の大きな時刻表示（STOP前）
+function handleSecretTripleTap() {
   tapCount++;
   clearTimeout(tapTimerId);
   tapTimerId = setTimeout(() => { tapCount = 0; }, 700);
@@ -463,7 +464,10 @@ function handleTap() {
     openNumpad();
   }
 }
-addTapListener(triggerZone, handleTap);
+addTapListener(triggerZone, handleSecretTripleTap);
+addTapListener(timeDsp, () => {
+  if (!swRunning) handleSecretTripleTap();
+});
 
 // ── INVISIBLE NUMPAD ─────────────────────────────────────
 // レイアウト（3×4、0%透明でマジシャンのみが位置を把握）:

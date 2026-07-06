@@ -200,6 +200,13 @@
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       color: #fff; font-family: -apple-system, sans-serif; font-size: 11px;
     }
+
+    /* マジシャン用・右下長押しゾーン（透明） */
+    #secret-corner {
+      position: fixed; right: 0; bottom: 0;
+      width: 88px; height: 88px;
+      z-index: 700; touch-action: none;
+    }
   </style>
 </head>
 <body>
@@ -279,6 +286,9 @@
     <button class="cfg-btn" id="cancel-btn">キャンセル</button>
   </div>
 
+  <!-- 右下3秒長押し（設定パネル） -->
+  <div id="secret-corner" aria-hidden="true"></div>
+
   <!-- GALLERY VIEW -->
   <div id="gallery-view">
     <div id="gallery-top">
@@ -329,7 +339,6 @@ let predXpct = 50;
 let predYpct = 30;
 let predScalePct = 30;
 let capturedSrc = '';
-let longPressId = null;
 let dragging = false;
 let dragOffX = 0, dragOffY = 0;
 
@@ -394,27 +403,42 @@ flipBtn.addEventListener('click', () => {
 });
 
 // ── SECRET TRIGGER（右下3秒長押し） ──────────────────────
-const CORNER = 80, HOLD_MS = 3000;
-let suppressMouseUntil = 0;
+// Androidでは指の微動でtouchmoveが発火するため、座標判定+全touchmoveキャンセルは機能しない。
+// 透明ヒットゾーン＋移動許容で長押しを判定する。
+function bindLongPress(el, onHold, holdMs) {
+  let timer = null;
+  let sx = 0, sy = 0;
+  const TOL = 24;
 
-function tryLongPress(x, y) {
-  const ok = x > window.innerWidth - CORNER && y > window.innerHeight - CORNER;
-  if (!ok) return;
-  longPressId = setTimeout(openConfig, HOLD_MS);
+  function clearTimer() {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+
+  function start(x, y) {
+    clearTimer();
+    sx = x; sy = y;
+    timer = setTimeout(() => { clearTimer(); onHold(); }, holdMs);
+  }
+
+  el.addEventListener('touchstart', e => {
+    e.preventDefault();
+    start(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+
+  el.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - sx, t.clientY - sy) > TOL) clearTimer();
+  }, { passive: true });
+
+  el.addEventListener('touchend', clearTimer, { passive: true });
+  el.addEventListener('touchcancel', clearTimer, { passive: true });
+  el.addEventListener('mousedown', e => start(e.clientX, e.clientY));
+  el.addEventListener('mouseup', clearTimer);
+  el.addEventListener('mouseleave', clearTimer);
 }
 
-document.addEventListener('touchstart', e => {
-  suppressMouseUntil = Date.now() + 600;
-  const t = e.touches[0];
-  tryLongPress(t.clientX, t.clientY);
-}, { passive: true });
-document.addEventListener('mousedown', e => {
-  if (Date.now() < suppressMouseUntil) return;
-  tryLongPress(e.clientX, e.clientY);
-});
-['touchend','touchmove','touchcancel','mouseup','mousemove'].forEach(ev =>
-  document.addEventListener(ev, () => clearTimeout(longPressId), { passive: true })
-);
+bindLongPress(document.getElementById('secret-corner'), openConfig, 3000);
 
 // ── SHUTTER ──────────────────────────────────────────────
 shutterBtn.addEventListener('click', () => {
