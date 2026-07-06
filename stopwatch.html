@@ -483,6 +483,8 @@ function addTapListener(el, handler, preventGhostClick) {
 
 function handleUiTap(e) {
   if (numpad.classList.contains('active')) return;
+  // 秘密トリガー領域は別ハンドラで処理
+  if (e.target.closest('#home-widget, #search-bar, #dock-trigger, #time-disp')) return;
   if (e.type === 'click' && Date.now() < suppressMouseUntil) return;
   if (e.type === 'touchend') suppressMouseUntil = Date.now() + 700;
 
@@ -510,7 +512,7 @@ function onSecretTap(source) {
   secretTapCount++;
   vibrate(30);
   clearTimeout(secretTapTimer);
-  secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 1500);
+  secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 2000);
   if (secretTapCount >= 3) {
     secretTapCount = 0;
     clearTimeout(secretTapTimer);
@@ -522,18 +524,16 @@ function onSecretTap(source) {
 
 function attachSecretTap(el, source) {
   if (!el) return;
-  let lastFire = 0;
-  function handler(e) {
-    if (e.type === 'touchstart' || e.type === 'touchend') suppressMouseUntil = Date.now() + 600;
-    const now = Date.now();
-    if (now - lastFire < 250) return;
-    lastFire = now;
-    onSecretTap(source);
-  }
-  el.addEventListener('touchend', handler, { passive: true });
-  el.addEventListener('click', (e) => {
+  const register = () => onSecretTap(source);
+  // touchstartで素早い3連打を確実にカウント（250msデバウンスは削除）
+  el.addEventListener('touchstart', () => {
+    suppressMouseUntil = Date.now() + 500;
+    register();
+  }, { passive: true });
+  // デスクトップ用フォールバック
+  el.addEventListener('click', () => {
     if (Date.now() < suppressMouseUntil) return;
-    handler(e);
+    register();
   });
 }
 
