@@ -79,6 +79,7 @@
       height: 42px; display: flex; align-items: center; padding: 0 14px; gap: 8px;
       color: rgba(255,255,255,0.65);
       font-family: -apple-system, sans-serif; font-size: 14px;
+      touch-action: manipulation;
     }
 
     #dock {
@@ -182,6 +183,7 @@
       position: fixed; inset: 0;
       visibility: hidden; opacity: 0; z-index: 9999;
       pointer-events: none;
+      touch-action: manipulation;
       /* 完全透明。active時のみタップを受け付ける */
     }
     #numpad.active { visibility: visible; display: grid; pointer-events: auto; }
@@ -191,7 +193,7 @@
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(4, 1fr);
     }
-    .nk { /* 各セル - 見えないがタップ可能 */ }
+    .nk { touch-action: manipulation; /* 各セル - 見えないがタップ可能 */ }
   </style>
 </head>
 <body>
@@ -344,10 +346,7 @@ let npInput      = '';
 let npAutoClose  = null;
 
 // ── ELEMENTS ─────────────────────────────────────────────
-const homeEl      = document.getElementById('home');
 const clockApp    = document.getElementById('clock-app');
-const clockIcon   = document.getElementById('clock-icon');
-const backRow     = document.getElementById('back-row');
 const timeDsp     = document.getElementById('time-disp');
 const fab         = document.getElementById('fab');
 const lapBtn      = document.getElementById('lap-btn');
@@ -374,8 +373,6 @@ tickClock();
 setInterval(tickClock, 1000);
 
 // ── NAVIGATION ───────────────────────────────────────────
-// click のみだとスマホで反応しない端末があるため touchstart も併用
-
 function openClock() {
   resetSW();
   clockApp.classList.add('open');
@@ -457,45 +454,26 @@ function findForced(actualMs, T) {
   return null; // 万が一見つからなければ null（実際の時間を表示）
 }
 
-// ── TOUCH/MOUSE DEDUP（スマホの互換mouseイベント二重発火を防ぐ）──
-let suppressMouseUntil = 0;
-let lastUiTapAt = 0;
-
-function runOnce(handler) {
-  const now = Date.now();
-  if (now - lastUiTapAt < 280) return;
-  lastUiTapAt = now;
-  handler();
-}
-
-function addTapListener(el, handler, preventGhostClick) {
-  if (!el) return;
-  el.addEventListener('touchstart', (e) => {
-    suppressMouseUntil = Date.now() + 600;
-    if (preventGhostClick) e.preventDefault();
-    handler(e);
-  }, { passive: !preventGhostClick });
-  el.addEventListener('mousedown', (e) => {
-    if (Date.now() < suppressMouseUntil) return;
-    handler(e);
-  });
-}
-
+// ── TAP HANDLING ─────────────────────────────────────────
+// タップ操作はすべて click イベントに統一する。
+// touchstart/touchend/mousedown を併用し、手動の抑制時間窓で
+// 二重発火を防ぐ従来方式は、Android Chrome / iOS Safari / iOS Chrome
+// それぞれでゴーストクリックの発火タイミングが異なるため、
+// 端末によってタップ自体が握りつぶされる不具合の原因になっていた。
+// viewport でズームを無効化し touch-action: manipulation を
+// 各タップ対象に設定してあるため、click は遅延なく1タップ=1回で発火する。
 function handleUiTap(e) {
   if (numpad.classList.contains('active')) return;
   // 秘密トリガー領域は別ハンドラで処理
   if (e.target.closest('#home-widget, #search-bar, #dock-trigger, #time-disp')) return;
-  if (e.type === 'click' && Date.now() < suppressMouseUntil) return;
-  if (e.type === 'touchend') suppressMouseUntil = Date.now() + 700;
 
   const t = e.target;
-  if (t.closest('#clock-icon')) runOnce(openClock);
-  else if (t.closest('#back-row')) runOnce(closeClock);
-  else if (t.closest('#fab')) runOnce(toggleSW);
-  else if (t.closest('#reset-btn')) runOnce(tryResetSW);
+  if (t.closest('#clock-icon')) openClock();
+  else if (t.closest('#back-row')) closeClock();
+  else if (t.closest('#fab')) toggleSW();
+  else if (t.closest('#reset-btn')) tryResetSW();
 }
 
-document.body.addEventListener('touchend', handleUiTap, { passive: true });
 document.body.addEventListener('click', handleUiTap);
 
 // ── VIBRATION ────────────────────────────────────────────
@@ -524,17 +502,7 @@ function onSecretTap(source) {
 
 function attachSecretTap(el, source) {
   if (!el) return;
-  const register = () => onSecretTap(source);
-  // touchstartで素早い3連打を確実にカウント（250msデバウンスは削除）
-  el.addEventListener('touchstart', () => {
-    suppressMouseUntil = Date.now() + 500;
-    register();
-  }, { passive: true });
-  // デスクトップ用フォールバック
-  el.addEventListener('click', () => {
-    if (Date.now() < suppressMouseUntil) return;
-    register();
-  });
+  el.addEventListener('click', () => onSecretTap(source));
 }
 
 attachSecretTap(triggerZone, 'dock');
@@ -565,13 +533,11 @@ function startNpTimeout() {
   npAutoClose = setTimeout(closeNumpad, 15000);
 }
 
-addTapListener(numpad, handleNp, true);
+numpad.addEventListener('click', handleNp);
 
 function handleNp(e) {
-  const px = e.touches ? e.touches[0].clientX : e.clientX;
-  const py = e.touches ? e.touches[0].clientY : e.clientY;
-  const col = Math.min(Math.floor((px / window.innerWidth)  * 3), 2);
-  const row = Math.min(Math.floor((py / window.innerHeight) * 4), 3);
+  const col = Math.min(Math.floor((e.clientX / window.innerWidth)  * 3), 2);
+  const row = Math.min(Math.floor((e.clientY / window.innerHeight) * 4), 3);
 
   const keys = [['1','2','3'],['4','5','6'],['7','8','9'],['del','0','ok']];
   const k = keys[row][col];
