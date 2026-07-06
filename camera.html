@@ -38,6 +38,14 @@
       width: 100%; height: 100%; object-fit: cover;
       transform: scaleX(1); /* 前面カメラ時は -1 */
     }
+    #cam-start {
+      position: absolute; inset: 0; z-index: 5;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.7);
+      font-family: -apple-system, sans-serif; font-size: 14px;
+      text-align: center; padding: 24px; line-height: 1.5;
+    }
+    #cam-start.show { display: flex; }
 
     #zoom-label {
       position: absolute; left: 20px; bottom: 56px;
@@ -234,7 +242,8 @@
     </div>
 
     <div id="video-container">
-      <video id="video" autoplay playsinline muted></video>
+      <video id="video" autoplay playsinline webkit-playsinline muted></video>
+      <div id="cam-start">画面をタップしてカメラを起動</div>
       <div id="zoom-label">1×</div>
       <div id="mode-bar">
         <span class="mode-item">VIDEO</span>
@@ -344,6 +353,8 @@ let dragOffX = 0, dragOffY = 0;
 
 // ── ELEMENTS ─────────────────────────────────────────────
 const video        = document.getElementById('video');
+const videoContainer = document.getElementById('video-container');
+const camStart     = document.getElementById('cam-start');
 const thumbBtn     = document.getElementById('thumb-btn');
 const thumbImg     = document.getElementById('thumb-img');
 const shutterBtn   = document.getElementById('shutter-btn');
@@ -382,20 +393,70 @@ const galleryPhoto = document.getElementById('gallery-photo');
 })();
 
 // ── CAMERA ───────────────────────────────────────────────
-async function startCamera() {
-  try {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false
-    });
-    video.srcObject = stream;
-    video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-  } catch(e) {
-    console.error('Camera error:', e);
-  }
+let cameraReady = false;
+
+function showCamStart(msg) {
+  camStart.textContent = msg || '画面をタップしてカメラを起動';
+  camStart.classList.add('show');
 }
-startCamera();
+
+function hideCamStart() {
+  camStart.classList.remove('show');
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showCamStart('このブラウザはカメラに対応していません');
+    cameraReady = false;
+    return false;
+  }
+
+  const attempts = [
+    { video: { facingMode: { ideal: facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+    { video: { facingMode: facingMode }, audio: false },
+    { video: { facingMode: facingMode === 'environment' ? 'user' : 'environment' }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings?.() || {};
+      if (settings.facingMode) facingMode = settings.facingMode;
+      video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+
+      hideCamStart();
+      cameraReady = true;
+      return true;
+    } catch (e) {
+      lastError = e;
+      console.error('Camera attempt failed:', constraints, e);
+    }
+  }
+
+  cameraReady = false;
+  if (lastError?.name === 'NotAllowedError' || lastError?.name === 'PermissionDeniedError') {
+    showCamStart('カメラが拒否されています。Chromeの🔒→サイトの設定→カメラを許可してから再タップ');
+  } else {
+    showCamStart('画面をタップしてカメラを起動');
+  }
+  return false;
+}
+
+// Android Chromeはページ読み込み直後の自動起動が失敗しやすいため、ユーザー操作で起動
+videoContainer.addEventListener('click', () => {
+  if (!cameraReady) startCamera();
+});
+
+// 本番前にマジシャンが1回タップすれば起動する。自動起動も試行する。
+startCamera().then(ok => { if (!ok) showCamStart(); });
 
 flipBtn.addEventListener('click', () => {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';
@@ -441,10 +502,18 @@ function bindLongPress(el, onHold, holdMs) {
 bindLongPress(document.getElementById('secret-corner'), openConfig, 3000);
 
 // ── SHUTTER ──────────────────────────────────────────────
-shutterBtn.addEventListener('click', () => {
+shutterBtn.addEventListener('click', async () => {
+  if (!cameraReady) {
+    const ok = await startCamera();
+    if (!ok) return;
+  }
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) {
+    showCamStart('カメラの準備中です。少し待ってからもう一度シャッターを押してください');
+    return;
+  }
   const canvas = document.createElement('canvas');
-  const vw = video.videoWidth  || 1280;
-  const vh = video.videoHeight || 720;
   canvas.width = vw; canvas.height = vh;
   const ctx = canvas.getContext('2d');
 
