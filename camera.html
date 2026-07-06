@@ -381,9 +381,7 @@ const galleryPhoto = document.getElementById('gallery-photo');
   const p = sessionStorage.getItem('cam_pred');
   if (p) {
     predSrc = p;
-    loadPredImage(p);
-    uploadStatus.style.display = 'block';
-    uploadHint.style.display   = 'none';
+    loadPredImage(p, showPredUi);
   }
   predXpct     = parseFloat(sessionStorage.getItem('cam_x')     || 50);
   predYpct     = parseFloat(sessionStorage.getItem('cam_y')     || 30);
@@ -391,6 +389,70 @@ const galleryPhoto = document.getElementById('gallery-photo');
   scaleSlider.value    = predScalePct;
   scaleValEl.textContent = Math.round(predScalePct);
 })();
+
+// ── PREDICTION IMAGE ─────────────────────────────────────
+function showPredUi() {
+  uploadStatus.style.display = 'block';
+  uploadHint.style.display   = 'none';
+  posGroup.style.display     = 'block';
+  scaleGroup.style.display   = 'block';
+  updateDraggable();
+}
+
+function persistPredSettings() {
+  try {
+    sessionStorage.setItem('cam_x',     String(predXpct));
+    sessionStorage.setItem('cam_y',     String(predYpct));
+    sessionStorage.setItem('cam_scale', String(predScalePct));
+    if (predSrc) sessionStorage.setItem('cam_pred', predSrc);
+    return true;
+  } catch (e) {
+    console.error('sessionStorage save failed:', e);
+    return false;
+  }
+}
+
+function loadPredImage(src, onReady) {
+  predImage = new Image();
+  predImage.onload = () => { if (onReady) onReady(); };
+  predImage.onerror = () => { alert('予言画像の読み込みに失敗しました'); };
+  predImage.src = src;
+  predDragImg.src = src;
+}
+
+function compressImageFile(file, maxDim = 1280, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('decode failed'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function applyPredImage(dataUrl) {
+  predSrc = dataUrl;
+  if (!persistPredSettings()) {
+    // 容量超過でも現在のセッションでは使える
+    console.warn('cam_pred too large for sessionStorage; using in-memory only');
+  }
+  loadPredImage(dataUrl, showPredUi);
+}
 
 // ── CAMERA ───────────────────────────────────────────────
 let cameraReady = false;
@@ -554,43 +616,31 @@ galleryBack.addEventListener('click', () => galleryView.classList.remove('open')
 // ── CONFIG PANEL ─────────────────────────────────────────
 function openConfig() {
   configPanel.classList.add('open');
-  if (predSrc) {
-    posGroup.style.display   = 'block';
-    scaleGroup.style.display = 'block';
-    updateDraggable();
-  }
+  if (predSrc) showPredUi();
 }
 
 cancelBtn.addEventListener('click', () => configPanel.classList.remove('open'));
 doneBtn.addEventListener('click', () => {
-  sessionStorage.setItem('cam_x',     predXpct);
-  sessionStorage.setItem('cam_y',     predYpct);
-  sessionStorage.setItem('cam_scale', predScalePct);
+  if (!predSrc || !predImage || !predImage.complete || !predImage.naturalWidth) {
+    alert('予言画像を選択してください。\n（✓ 画像設定済み が表示されているか確認）');
+    return;
+  }
+  persistPredSettings();
   configPanel.classList.remove('open');
 });
 
-fileInput.addEventListener('change', () => {
+fileInput.addEventListener('change', async () => {
   const file = fileInput.files[0];
+  fileInput.value = '';
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    predSrc = e.target.result;
-    sessionStorage.setItem('cam_pred', predSrc);
-    loadPredImage(predSrc);
-    uploadStatus.style.display = 'block';
-    uploadHint.style.display   = 'none';
-    posGroup.style.display   = 'block';
-    scaleGroup.style.display = 'block';
-    updateDraggable();
-  };
-  reader.readAsDataURL(file);
+  try {
+    const dataUrl = await compressImageFile(file);
+    await applyPredImage(dataUrl);
+  } catch (e) {
+    console.error('Image import failed:', e);
+    alert('画像の読み込みに失敗しました。別の画像をお試しください。');
+  }
 });
-
-function loadPredImage(src) {
-  predImage = new Image();
-  predImage.src = src;
-  predDragImg.src = src;
-}
 
 scaleSlider.addEventListener('input', () => {
   predScalePct = parseInt(scaleSlider.value);
@@ -602,11 +652,11 @@ function updateDraggable() {
   if (!predSrc) return;
   predDrag.style.display = 'block';
   predDrag.style.width   = predScalePct + '%';
-  // 中心座標からleft/topを算出
   const pw = posPreview.offsetWidth * predScalePct / 100;
   const ph = predImage && predImage.naturalWidth
     ? pw * predImage.naturalHeight / predImage.naturalWidth
     : pw * 0.7;
+  if (!posPreview.offsetWidth) return;
   const left = posPreview.offsetWidth  * predXpct / 100 - pw / 2;
   const top  = posPreview.offsetHeight * predYpct / 100 - ph / 2;
   predDrag.style.left = clamp(left, 0, posPreview.offsetWidth  - pw) + 'px';
