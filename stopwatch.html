@@ -194,6 +194,16 @@
       grid-template-rows: repeat(4, 1fr);
     }
     .nk { touch-action: manipulation; /* 各セル - 見えないがタップ可能 */ }
+
+    /* ── DEBUG OVERLAY（?debug=1 の時だけ表示）──────────── */
+    #debug-log {
+      position: fixed; left: 4px; bottom: 4px; z-index: 99999;
+      max-width: 92vw; pointer-events: none;
+      background: rgba(0,0,0,0.7); color: #0f0;
+      font-family: monospace; font-size: 10px; line-height: 1.4;
+      padding: 4px 6px; white-space: pre-wrap; display: none;
+    }
+    #debug-log.on { display: block; }
   </style>
 </head>
 <body>
@@ -330,6 +340,9 @@
     </div>
   </div>
 
+  <!-- ═══ デバッグ表示（?debug=1でのみ表示・観客には見えない） ═══ -->
+  <div id="debug-log"></div>
+
 <script>
 // ── STATE ────────────────────────────────────────────────
 let targetSum = 0;
@@ -344,6 +357,19 @@ let swElapsedMs  = 0;
 let swRafId      = null;
 let npInput      = '';
 let npAutoClose  = null;
+
+// ── DEBUG（?debug=1 でのみ画面隅にイベントログを表示）────────
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
+const debugEl = document.getElementById('debug-log');
+const debugLines = [];
+function debugLog(...parts) {
+  if (!DEBUG) return;
+  debugEl.classList.add('on');
+  debugLines.push(parts.join(' '));
+  if (debugLines.length > 8) debugLines.shift();
+  debugEl.textContent = debugLines.join('\n');
+}
+window.addEventListener('error', (e) => debugLog('JS-ERROR', e.message));
 
 // ── ELEMENTS ─────────────────────────────────────────────
 const clockApp    = document.getElementById('clock-app');
@@ -455,14 +481,14 @@ function findForced(actualMs, T) {
 }
 
 // ── TAP HANDLING ─────────────────────────────────────────
-// タップ操作はすべて click イベントに統一する。
-// touchstart/touchend/mousedown を併用し、手動の抑制時間窓で
-// 二重発火を防ぐ従来方式は、Android Chrome / iOS Safari / iOS Chrome
-// それぞれでゴーストクリックの発火タイミングが異なるため、
-// 端末によってタップ自体が握りつぶされる不具合の原因になっていた。
-// viewport でズームを無効化し touch-action: manipulation を
-// 各タップ対象に設定してあるため、click は遅延なく1タップ=1回で発火する。
+// click / touchstart / touchend / mousedown を組み合わせる方式は
+// ブラウザごとの合成クリックのタイミング差に依存し、iOS実機で
+// タップが握りつぶされる不具合を繰り返した。Pointer Events
+// （pointerup）はマウス・タッチ・ペンを1本のイベント系列に統一し、
+// ブラウザの合成クリック処理を経由しないため、Safari/Chrome(iOS)/
+// Android Chromeのいずれでも同じタイミングで確実に発火する。
 function handleUiTap(e) {
+  debugLog('tap', e.target && (e.target.id || e.target.className));
   if (numpad.classList.contains('active')) return;
   // 秘密トリガー領域は別ハンドラで処理
   if (e.target.closest('#home-widget, #search-bar, #dock-trigger, #time-disp')) return;
@@ -474,7 +500,7 @@ function handleUiTap(e) {
   else if (t.closest('#reset-btn')) tryResetSW();
 }
 
-document.body.addEventListener('click', handleUiTap);
+document.body.addEventListener('pointerup', handleUiTap);
 
 // ── VIBRATION ────────────────────────────────────────────
 function vibrate(pat) {
@@ -502,7 +528,10 @@ function onSecretTap(source) {
 
 function attachSecretTap(el, source) {
   if (!el) return;
-  el.addEventListener('click', () => onSecretTap(source));
+  el.addEventListener('pointerup', () => {
+    debugLog('secret', source);
+    onSecretTap(source);
+  });
 }
 
 attachSecretTap(triggerZone, 'dock');
@@ -533,9 +562,10 @@ function startNpTimeout() {
   npAutoClose = setTimeout(closeNumpad, 15000);
 }
 
-numpad.addEventListener('click', handleNp);
+numpad.addEventListener('pointerup', handleNp);
 
 function handleNp(e) {
+  debugLog('numpad', e.clientX + ',' + e.clientY);
   const col = Math.min(Math.floor((e.clientX / window.innerWidth)  * 3), 2);
   const row = Math.min(Math.floor((e.clientY / window.innerHeight) * 4), 3);
 
