@@ -91,13 +91,15 @@
       position: relative;
     }
 
-    /* 秘密トリガー（JSでChromeとグリッドの隙間に配置） */
+    /* 秘密トリガー（ドック内のChromeとグリッドの隙間） */
     #dock-trigger {
-      position: fixed;
-      z-index: 500;
+      flex: 1;
+      min-width: 44px;
+      max-width: 72px;
+      height: 54px;
       background: transparent;
       touch-action: manipulation;
-      display: none;
+      flex-shrink: 0;
     }
 
     /* ── CLOCK APP ───────────────────────────── */
@@ -178,11 +180,11 @@
     /* ── INVISIBLE NUMPAD ──────────────────── */
     #numpad {
       position: fixed; inset: 0;
-      display: none; opacity: 0; z-index: 9999;
+      visibility: hidden; opacity: 0; z-index: 9999;
       pointer-events: none;
       /* 完全透明。active時のみタップを受け付ける */
     }
-    #numpad.active { display: grid; pointer-events: auto; }
+    #numpad.active { visibility: visible; display: grid; pointer-events: auto; }
     #numpad-grid {
       width: 100%; height: 100%;
       display: grid;
@@ -256,6 +258,7 @@
       <div class="app-icon"><div class="app-img" style="background:#388E3C;width:54px;height:54px;border-radius:27px">📱</div></div>
       <div class="app-icon"><div class="app-img" style="background:#1976D2;width:54px;height:54px;border-radius:27px">💬</div></div>
       <div class="app-icon" id="dock-chrome"><div class="app-img" style="background:#4527A0;width:54px;height:54px;border-radius:27px">🌐</div></div>
+      <div id="dock-trigger" aria-hidden="true"></div>
       <div class="app-icon" id="dock-grid">
         <div class="app-img" style="background:rgba(255,255,255,0.12);width:54px;height:54px;border-radius:27px">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
@@ -265,8 +268,6 @@
       </div>
     </div>
   </div>
-
-  <div id="dock-trigger" aria-hidden="true"></div>
 
   <!-- ═══ CLOCK APP ═══ -->
   <div id="clock-app">
@@ -302,9 +303,9 @@
     <div id="sw-main">
       <div id="time-disp">00.00</div>
       <div id="sw-btns">
-        <button class="sw-side" id="lap-btn">LAP</button>
-        <button id="fab">START</button>
-        <button class="sw-side" id="reset-btn">RESET</button>
+        <button class="sw-side" id="lap-btn" type="button">LAP</button>
+        <button id="fab" type="button">START</button>
+        <button class="sw-side" id="reset-btn" type="button">RESET</button>
       </div>
     </div>
   </div>
@@ -329,7 +330,12 @@
 
 <script>
 // ── STATE ────────────────────────────────────────────────
-let targetSum    = parseInt(sessionStorage.getItem('sw_target') || '0');
+let targetSum = 0;
+try {
+  targetSum = parseInt(sessionStorage.getItem('sw_target') || '0', 10) || 0;
+} catch (e) {
+  targetSum = 0;
+}
 let swRunning    = false;
 let swStartTime  = 0;
 let swElapsedMs  = 0;
@@ -373,11 +379,9 @@ setInterval(tickClock, 1000);
 function openClock() {
   resetSW();
   clockApp.classList.add('open');
-  if (triggerZone) triggerZone.style.display = 'none';
 }
 function closeClock() {
   clockApp.classList.remove('open');
-  positionDockTrigger();
 }
 
 // ── STOPWATCH ────────────────────────────────────────────
@@ -455,6 +459,15 @@ function findForced(actualMs, T) {
 
 // ── TOUCH/MOUSE DEDUP（スマホの互換mouseイベント二重発火を防ぐ）──
 let suppressMouseUntil = 0;
+let lastUiTapAt = 0;
+
+function runOnce(handler) {
+  const now = Date.now();
+  if (now - lastUiTapAt < 280) return;
+  lastUiTapAt = now;
+  handler();
+}
+
 function addTapListener(el, handler, preventGhostClick) {
   if (!el) return;
   el.addEventListener('touchstart', (e) => {
@@ -468,14 +481,20 @@ function addTapListener(el, handler, preventGhostClick) {
   });
 }
 
-function addClickTap(el, handler) {
-  addTapListener(el, handler, false);
+function handleUiTap(e) {
+  if (numpad.classList.contains('active')) return;
+  if (e.type === 'click' && Date.now() < suppressMouseUntil) return;
+  if (e.type === 'touchend') suppressMouseUntil = Date.now() + 700;
+
+  const t = e.target;
+  if (t.closest('#clock-icon')) runOnce(openClock);
+  else if (t.closest('#back-row')) runOnce(closeClock);
+  else if (t.closest('#fab')) runOnce(toggleSW);
+  else if (t.closest('#reset-btn')) runOnce(tryResetSW);
 }
 
-addClickTap(clockIcon, openClock);
-addClickTap(backRow, closeClock);
-addClickTap(fab, toggleSW);
-addClickTap(resetBtn, tryResetSW);
+document.body.addEventListener('touchend', handleUiTap, { passive: true });
+document.body.addEventListener('click', handleUiTap);
 
 // ── VIBRATION ────────────────────────────────────────────
 function vibrate(pat) {
@@ -505,48 +524,23 @@ function attachSecretTap(el, source) {
   if (!el) return;
   let lastFire = 0;
   function handler(e) {
-    if (e.type === 'touchstart') suppressMouseUntil = Date.now() + 600;
+    if (e.type === 'touchstart' || e.type === 'touchend') suppressMouseUntil = Date.now() + 600;
     const now = Date.now();
     if (now - lastFire < 250) return;
     lastFire = now;
     onSecretTap(source);
   }
-  // pointerdown+touchstartの二重発火を避け、touchstartのみ使用
-  el.addEventListener('touchstart', handler, { passive: true });
-  el.addEventListener('mousedown', (e) => {
+  el.addEventListener('touchend', handler, { passive: true });
+  el.addEventListener('click', (e) => {
     if (Date.now() < suppressMouseUntil) return;
     handler(e);
   });
-}
-
-function positionDockTrigger() {
-  const chrome = document.getElementById('dock-chrome');
-  const grid = document.getElementById('dock-grid');
-  const dock = document.getElementById('dock');
-  if (!chrome || !grid || !dock || !triggerZone || clockApp.classList.contains('open')) {
-    if (triggerZone) triggerZone.style.display = 'none';
-    return;
-  }
-  const cr = chrome.getBoundingClientRect();
-  const gr = grid.getBoundingClientRect();
-  const dr = dock.getBoundingClientRect();
-  triggerZone.style.display = 'block';
-  triggerZone.style.left = (cr.right - 8) + 'px';
-  triggerZone.style.width = Math.max(48, gr.left - cr.right + 16) + 'px';
-  triggerZone.style.top = dr.top + 'px';
-  triggerZone.style.height = dr.height + 'px';
 }
 
 attachSecretTap(triggerZone, 'dock');
 attachSecretTap(homeWidget, 'home');
 attachSecretTap(document.getElementById('search-bar'), 'search');
 attachSecretTap(timeDsp, 'stopwatch');
-
-window.addEventListener('resize', positionDockTrigger);
-window.addEventListener('orientationchange', () => setTimeout(positionDockTrigger, 200));
-positionDockTrigger();
-setTimeout(positionDockTrigger, 300);
-setTimeout(positionDockTrigger, 1000);
 
 // ── INVISIBLE NUMPAD ─────────────────────────────────────
 // レイアウト（3×4、0%透明でマジシャンのみが位置を把握）:
@@ -564,6 +558,8 @@ function closeNumpad() {
   numpad.classList.remove('active');
   clearTimeout(npAutoClose);
 }
+// 起動時は必ず通常モード
+closeNumpad();
 function startNpTimeout() {
   clearTimeout(npAutoClose);
   npAutoClose = setTimeout(closeNumpad, 15000);
@@ -584,7 +580,7 @@ function handleNp(e) {
     const v = parseInt(npInput);
     if (!isNaN(v) && v >= 1 && v <= 36) {
       targetSum = v;
-      sessionStorage.setItem('sw_target', String(v));
+      try { sessionStorage.setItem('sw_target', String(v)); } catch (e) {}
       vibrate([60, 40, 60, 40, 200]); // 確定（強め）
     } else {
       vibrate([30,20,30,20,30,20,30,20,30]); // エラー
