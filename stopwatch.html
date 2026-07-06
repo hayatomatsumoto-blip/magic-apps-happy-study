@@ -32,15 +32,18 @@
     }
 
     #home-widget {
-      text-align: center; padding: 20px 0 12px; flex-shrink: 0;
+      text-align: center; padding: 28px 20px 20px; flex-shrink: 0;
+      touch-action: manipulation;
     }
     #hw-time {
       color: #fff; font-family: -apple-system, sans-serif;
       font-size: 68px; font-weight: 100; letter-spacing: 2px; line-height: 1;
+      pointer-events: none;
     }
     #hw-date {
       color: rgba(255,255,255,0.75);
       font-family: -apple-system, sans-serif; font-size: 15px; margin-top: 4px;
+      pointer-events: none;
     }
 
     #app-grid {
@@ -126,6 +129,8 @@
       font-family: 'Courier New', Courier, monospace;
       font-size: 80px; font-weight: 200;
       letter-spacing: 6px; font-variant-numeric: tabular-nums;
+      padding: 16px 24px;
+      touch-action: manipulation;
     }
 
     #sw-btns {
@@ -338,6 +343,7 @@ const resetBtn    = document.getElementById('reset-btn');
 const triggerZone = document.getElementById('dock-trigger');
 const numpad      = document.getElementById('numpad');
 const hwTime      = document.getElementById('hw-time');
+const homeWidget  = document.getElementById('home-widget');
 const hwDate      = document.getElementById('hw-date');
 const stEls       = [document.getElementById('st1'), document.getElementById('st2')];
 
@@ -462,14 +468,13 @@ function vibrate(pat) {
 // ── SECRET TRIGGER (トリプルタップ) ───────────────────────
 let secretTapCount = 0;
 let secretTapTimer = null;
-let lastTouchAt = 0;
 
 function onSecretTap(source) {
   if (source === 'stopwatch' && swRunning) return;
   secretTapCount++;
   vibrate(30);
   clearTimeout(secretTapTimer);
-  secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 1000);
+  secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 1500);
   if (secretTapCount >= 3) {
     secretTapCount = 0;
     clearTimeout(secretTapTimer);
@@ -479,14 +484,15 @@ function onSecretTap(source) {
 
 function attachSecretTap(el, source) {
   if (!el) return;
-  el.addEventListener('touchstart', () => {
-    lastTouchAt = Date.now();
+  let lastFire = 0;
+  function handler() {
+    const now = Date.now();
+    if (now - lastFire < 250) return;
+    lastFire = now;
     onSecretTap(source);
-  }, { passive: true });
-  el.addEventListener('click', () => {
-    if (Date.now() - lastTouchAt < 400) return;
-    onSecretTap(source);
-  });
+  }
+  el.addEventListener('pointerdown', handler);
+  el.addEventListener('touchstart', handler, { passive: true });
 }
 
 function positionDockTrigger() {
@@ -508,7 +514,7 @@ function positionDockTrigger() {
 }
 
 attachSecretTap(triggerZone, 'dock');
-attachSecretTap(hwTime, 'home');
+attachSecretTap(homeWidget, 'home');
 attachSecretTap(document.getElementById('search-bar'), 'search');
 attachSecretTap(timeDsp, 'stopwatch');
 
