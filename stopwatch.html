@@ -86,15 +86,13 @@
       position: relative;
     }
 
-    /* 秘密トリガーゾーン（Chromeとグリッドアイコンの間） */
-    #trigger-zone {
-      width: 44px;
-      min-width: 44px;
-      flex-shrink: 0;
-      align-self: stretch;
-      position: relative;
-      z-index: 30;
+    /* 秘密トリガー（JSでChromeとグリッドの隙間に配置） */
+    #dock-trigger {
+      position: fixed;
+      z-index: 500;
+      background: transparent;
       touch-action: manipulation;
+      display: none;
     }
 
     /* ── CLOCK APP ───────────────────────────── */
@@ -246,10 +244,8 @@
     <div id="dock">
       <div class="app-icon"><div class="app-img" style="background:#388E3C;width:54px;height:54px;border-radius:27px">📱</div></div>
       <div class="app-icon"><div class="app-img" style="background:#1976D2;width:54px;height:54px;border-radius:27px">💬</div></div>
-      <div class="app-icon"><div class="app-img" style="background:#4527A0;width:54px;height:54px;border-radius:27px">🌐</div></div>
-      <!-- 秘密トリガー：Chromeとグリッドの間をトリプルタップ -->
-      <div id="trigger-zone"></div>
-      <div class="app-icon">
+      <div class="app-icon" id="dock-chrome"><div class="app-img" style="background:#4527A0;width:54px;height:54px;border-radius:27px">🌐</div></div>
+      <div class="app-icon" id="dock-grid">
         <div class="app-img" style="background:rgba(255,255,255,0.12);width:54px;height:54px;border-radius:27px">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
             <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
@@ -258,6 +254,8 @@
       </div>
     </div>
   </div>
+
+  <div id="dock-trigger" aria-hidden="true"></div>
 
   <!-- ═══ CLOCK APP ═══ -->
   <div id="clock-app">
@@ -325,8 +323,6 @@ let swRunning    = false;
 let swStartTime  = 0;
 let swElapsedMs  = 0;
 let swRafId      = null;
-let tapCount     = 0;
-let tapTimerId   = null;
 let npInput      = '';
 let npAutoClose  = null;
 
@@ -339,7 +335,7 @@ const timeDsp     = document.getElementById('time-disp');
 const fab         = document.getElementById('fab');
 const lapBtn      = document.getElementById('lap-btn');
 const resetBtn    = document.getElementById('reset-btn');
-const triggerZone = document.getElementById('trigger-zone');
+const triggerZone = document.getElementById('dock-trigger');
 const numpad      = document.getElementById('numpad');
 const hwTime      = document.getElementById('hw-time');
 const hwDate      = document.getElementById('hw-date');
@@ -366,9 +362,11 @@ backRow.addEventListener('click',   closeClock);
 function openClock() {
   resetSW();
   clockApp.classList.add('open');
+  if (triggerZone) triggerZone.style.display = 'none';
 }
 function closeClock() {
   clockApp.classList.remove('open');
+  positionDockTrigger();
 }
 
 // ── STOPWATCH ────────────────────────────────────────────
@@ -457,20 +455,75 @@ function addTapListener(el, handler, preventGhostClick) {
 }
 
 // ── SECRET TRIGGER (トリプルタップ) ───────────────────────
-// ①ホーム画面ドックの隙間  ②時計アプリ内の大きな時刻表示（STOP前）
-function handleSecretTripleTap() {
-  tapCount++;
-  clearTimeout(tapTimerId);
-  tapTimerId = setTimeout(() => { tapCount = 0; }, 900);
-  if (tapCount >= 3) {
-    tapCount = 0;
+// ①ドック隙間  ②ホーム画面の大時計  ③時計アプリ内の表示（STOP前）
+let secretTapCount = 0;
+let secretTapTimer = null;
+let lastSecretTouch = 0;
+
+function registerSecretTap() {
+  secretTapCount++;
+  vibrate(22);
+  clearTimeout(secretTapTimer);
+  secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 1000);
+  if (secretTapCount >= 3) {
+    secretTapCount = 0;
+    clearTimeout(secretTapTimer);
     openNumpad();
   }
 }
-addTapListener(triggerZone, handleSecretTripleTap);
-addTapListener(timeDsp, () => {
-  if (!swRunning) handleSecretTripleTap();
+
+function bindTripleTap(el) {
+  el.addEventListener('touchend', e => {
+    e.preventDefault();
+    lastSecretTouch = Date.now();
+    registerSecretTap();
+  }, { passive: false });
+  el.addEventListener('click', e => {
+    if (Date.now() - lastSecretTouch < 500) return;
+    registerSecretTap();
+  });
+}
+
+function positionDockTrigger() {
+  const chrome = document.getElementById('dock-chrome');
+  const grid = document.getElementById('dock-grid');
+  if (!chrome || !grid || !triggerZone || clockApp.classList.contains('open')) {
+    if (triggerZone) triggerZone.style.display = 'none';
+    return;
+  }
+  const cr = chrome.getBoundingClientRect();
+  const gr = grid.getBoundingClientRect();
+  const left = cr.right - 6;
+  const width = Math.max(40, gr.left - cr.right + 12);
+  const dock = document.getElementById('dock');
+  const dr = dock.getBoundingClientRect();
+  triggerZone.style.display = 'block';
+  triggerZone.style.left = left + 'px';
+  triggerZone.style.width = width + 'px';
+  triggerZone.style.top = dr.top + 'px';
+  triggerZone.style.height = dr.height + 'px';
+}
+
+bindTripleTap(triggerZone);
+bindTripleTap(hwTime);
+// 時計アプリ内：計測中は無効
+timeDsp.addEventListener('touchend', e => {
+  if (swRunning) return;
+  e.preventDefault();
+  lastSecretTouch = Date.now();
+  registerSecretTap();
+}, { passive: false });
+timeDsp.addEventListener('click', () => {
+  if (swRunning) return;
+  if (Date.now() - lastSecretTouch < 500) return;
+  registerSecretTap();
 });
+
+window.addEventListener('resize', positionDockTrigger);
+window.addEventListener('orientationchange', positionDockTrigger);
+positionDockTrigger();
+setTimeout(positionDockTrigger, 150);
+setTimeout(positionDockTrigger, 600);
 
 // ── INVISIBLE NUMPAD ─────────────────────────────────────
 // レイアウト（3×4、0%透明でマジシャンのみが位置を把握）:
