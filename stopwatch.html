@@ -358,16 +358,21 @@ let swRafId      = null;
 let npInput      = '';
 let npAutoClose  = null;
 
-// ── DEBUG（?debug=1 でのみ画面隅にイベントログを表示）────────
+// ── DEBUG（?debug=1 でのみ画面隅に状態とイベントログを表示）────
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 const debugEl = document.getElementById('debug-log');
 const debugLines = [];
+function renderDebug() {
+  if (!DEBUG) return;
+  const status = `NUMPAD:${numpad.classList.contains('active') ? 'OPEN' : 'closed'} target:${targetSum}`;
+  debugEl.textContent = status + '\n' + debugLines.join('\n');
+}
 function debugLog(...parts) {
   if (!DEBUG) return;
   debugEl.classList.add('on');
   debugLines.push(parts.join(' '));
   if (debugLines.length > 8) debugLines.shift();
-  debugEl.textContent = debugLines.join('\n');
+  renderDebug();
 }
 window.addEventListener('error', (e) => debugLog('JS-ERROR', e.message));
 
@@ -550,10 +555,12 @@ function openNumpad() {
   numpad.classList.add('active');
   vibrate([40, 30, 40, 30, 40]); // 「入力モード開始」合図（3連続）
   startNpTimeout();
+  renderDebug();
 }
 function closeNumpad() {
   numpad.classList.remove('active');
   clearTimeout(npAutoClose);
+  renderDebug();
 }
 // 起動時は必ず通常モード
 closeNumpad();
