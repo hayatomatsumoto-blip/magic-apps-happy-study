@@ -454,15 +454,20 @@ function addTapListener(el, handler, preventGhostClick) {
   });
 }
 
+// ── VIBRATION ────────────────────────────────────────────
+function vibrate(pat) {
+  try { navigator.vibrate(pat); } catch(e) {}
+}
+
 // ── SECRET TRIGGER (トリプルタップ) ───────────────────────
-// ①ドック隙間  ②ホーム画面の大時計  ③時計アプリ内の表示（STOP前）
 let secretTapCount = 0;
 let secretTapTimer = null;
-let lastSecretTouch = 0;
+let lastTouchAt = 0;
 
-function registerSecretTap() {
+function onSecretTap(source) {
+  if (source === 'stopwatch' && swRunning) return;
   secretTapCount++;
-  vibrate(22);
+  vibrate(30);
   clearTimeout(secretTapTimer);
   secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 1000);
   if (secretTapCount >= 3) {
@@ -472,58 +477,46 @@ function registerSecretTap() {
   }
 }
 
-function bindTripleTap(el) {
-  el.addEventListener('touchend', e => {
-    e.preventDefault();
-    lastSecretTouch = Date.now();
-    registerSecretTap();
-  }, { passive: false });
-  el.addEventListener('click', e => {
-    if (Date.now() - lastSecretTouch < 500) return;
-    registerSecretTap();
+function attachSecretTap(el, source) {
+  if (!el) return;
+  el.addEventListener('touchstart', () => {
+    lastTouchAt = Date.now();
+    onSecretTap(source);
+  }, { passive: true });
+  el.addEventListener('click', () => {
+    if (Date.now() - lastTouchAt < 400) return;
+    onSecretTap(source);
   });
 }
 
 function positionDockTrigger() {
   const chrome = document.getElementById('dock-chrome');
   const grid = document.getElementById('dock-grid');
-  if (!chrome || !grid || !triggerZone || clockApp.classList.contains('open')) {
+  const dock = document.getElementById('dock');
+  if (!chrome || !grid || !dock || !triggerZone || clockApp.classList.contains('open')) {
     if (triggerZone) triggerZone.style.display = 'none';
     return;
   }
   const cr = chrome.getBoundingClientRect();
   const gr = grid.getBoundingClientRect();
-  const left = cr.right - 6;
-  const width = Math.max(40, gr.left - cr.right + 12);
-  const dock = document.getElementById('dock');
   const dr = dock.getBoundingClientRect();
   triggerZone.style.display = 'block';
-  triggerZone.style.left = left + 'px';
-  triggerZone.style.width = width + 'px';
+  triggerZone.style.left = (cr.right - 8) + 'px';
+  triggerZone.style.width = Math.max(48, gr.left - cr.right + 16) + 'px';
   triggerZone.style.top = dr.top + 'px';
   triggerZone.style.height = dr.height + 'px';
 }
 
-bindTripleTap(triggerZone);
-bindTripleTap(hwTime);
-// 時計アプリ内：計測中は無効
-timeDsp.addEventListener('touchend', e => {
-  if (swRunning) return;
-  e.preventDefault();
-  lastSecretTouch = Date.now();
-  registerSecretTap();
-}, { passive: false });
-timeDsp.addEventListener('click', () => {
-  if (swRunning) return;
-  if (Date.now() - lastSecretTouch < 500) return;
-  registerSecretTap();
-});
+attachSecretTap(triggerZone, 'dock');
+attachSecretTap(hwTime, 'home');
+attachSecretTap(document.getElementById('search-bar'), 'search');
+attachSecretTap(timeDsp, 'stopwatch');
 
 window.addEventListener('resize', positionDockTrigger);
-window.addEventListener('orientationchange', positionDockTrigger);
+window.addEventListener('orientationchange', () => setTimeout(positionDockTrigger, 200));
 positionDockTrigger();
-setTimeout(positionDockTrigger, 150);
-setTimeout(positionDockTrigger, 600);
+setTimeout(positionDockTrigger, 300);
+setTimeout(positionDockTrigger, 1000);
 
 // ── INVISIBLE NUMPAD ─────────────────────────────────────
 // レイアウト（3×4、0%透明でマジシャンのみが位置を把握）:
@@ -577,11 +570,6 @@ function handleNp(e) {
     }
   }
   startNpTimeout();
-}
-
-// ── VIBRATION ────────────────────────────────────────────
-function vibrate(pat) {
-  try { navigator.vibrate(pat); } catch(e) {}
 }
 </script>
 </body>
