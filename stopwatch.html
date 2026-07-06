@@ -58,6 +58,8 @@
     .app-icon {
       display: flex; flex-direction: column;
       align-items: center; gap: 5px;
+      touch-action: manipulation;
+      cursor: pointer;
     }
     .app-img {
       width: 54px; height: 54px; border-radius: 13px;
@@ -145,6 +147,7 @@
       font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer;
+      touch-action: manipulation;
     }
     .sw-side.on { color: #ccc; border-color: #444; }
 
@@ -155,6 +158,7 @@
       font-size: 14px; font-weight: 800; letter-spacing: 0.5px;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; border: none;
+      touch-action: manipulation;
       box-shadow: 0 4px 20px rgba(27,94,32,0.55);
       transition: background 0.15s, box-shadow 0.15s;
     }
@@ -168,15 +172,17 @@
       color: #00bcd4;
       font-family: -apple-system, sans-serif; font-size: 15px;
       cursor: pointer; align-self: flex-start;
+      touch-action: manipulation;
     }
 
     /* ── INVISIBLE NUMPAD ──────────────────── */
     #numpad {
       position: fixed; inset: 0;
       display: none; opacity: 0; z-index: 9999;
-      /* 完全透明。pointer-eventsは有効 */
+      pointer-events: none;
+      /* 完全透明。active時のみタップを受け付ける */
     }
-    #numpad.active { display: grid; }
+    #numpad.active { display: grid; pointer-events: auto; }
     #numpad-grid {
       width: 100%; height: 100%;
       display: grid;
@@ -362,8 +368,7 @@ tickClock();
 setInterval(tickClock, 1000);
 
 // ── NAVIGATION ───────────────────────────────────────────
-clockIcon.addEventListener('click', openClock);
-backRow.addEventListener('click',   closeClock);
+// click のみだとスマホで反応しない端末があるため touchstart も併用
 
 function openClock() {
   resetSW();
@@ -376,10 +381,12 @@ function closeClock() {
 }
 
 // ── STOPWATCH ────────────────────────────────────────────
-fab.addEventListener('click', () => {
+function toggleSW() {
   if (!swRunning) startSW(); else stopSW();
-});
-resetBtn.addEventListener('click', () => { if (!swRunning) resetSW(); });
+}
+function tryResetSW() {
+  if (!swRunning) resetSW();
+}
 
 function startSW() {
   swRunning   = true;
@@ -449,6 +456,7 @@ function findForced(actualMs, T) {
 // ── TOUCH/MOUSE DEDUP（スマホの互換mouseイベント二重発火を防ぐ）──
 let suppressMouseUntil = 0;
 function addTapListener(el, handler, preventGhostClick) {
+  if (!el) return;
   el.addEventListener('touchstart', (e) => {
     suppressMouseUntil = Date.now() + 600;
     if (preventGhostClick) e.preventDefault();
@@ -459,6 +467,15 @@ function addTapListener(el, handler, preventGhostClick) {
     handler(e);
   });
 }
+
+function addClickTap(el, handler) {
+  addTapListener(el, handler, false);
+}
+
+addClickTap(clockIcon, openClock);
+addClickTap(backRow, closeClock);
+addClickTap(fab, toggleSW);
+addClickTap(resetBtn, tryResetSW);
 
 // ── VIBRATION ────────────────────────────────────────────
 function vibrate(pat) {
@@ -478,21 +495,28 @@ function onSecretTap(source) {
   if (secretTapCount >= 3) {
     secretTapCount = 0;
     clearTimeout(secretTapTimer);
-    openNumpad();
+    // 誤って開いた透明テンキーはもう一度トリプルタップで閉じられる
+    if (numpad.classList.contains('active')) closeNumpad();
+    else openNumpad();
   }
 }
 
 function attachSecretTap(el, source) {
   if (!el) return;
   let lastFire = 0;
-  function handler() {
+  function handler(e) {
+    if (e.type === 'touchstart') suppressMouseUntil = Date.now() + 600;
     const now = Date.now();
     if (now - lastFire < 250) return;
     lastFire = now;
     onSecretTap(source);
   }
-  el.addEventListener('pointerdown', handler);
+  // pointerdown+touchstartの二重発火を避け、touchstartのみ使用
   el.addEventListener('touchstart', handler, { passive: true });
+  el.addEventListener('mousedown', (e) => {
+    if (Date.now() < suppressMouseUntil) return;
+    handler(e);
+  });
 }
 
 function positionDockTrigger() {
